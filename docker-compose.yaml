@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16
+    container_name: pr_service_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pr_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pr_service_app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/pr_service?sslmode=disable
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
