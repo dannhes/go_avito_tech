@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go_avito_tech/internal/gateways/http"
+	"go_avito_tech/internal/logger"
 	"go_avito_tech/internal/repository/db"
 	"go_avito_tech/internal/repository/postgres"
 	"os"
@@ -13,6 +14,8 @@ import (
 )
 
 func main() {
+	logger.Init()
+	defer logger.Sync()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := db.InitDB(ctx); err != nil {
@@ -23,6 +26,7 @@ func main() {
 	usersRepo := postgres.NewUserRepository(pool)
 	teamsRepo := postgres.NewTeamRepository(pool)
 	pullRequestsRepo := postgres.NewPullRequestRepository(pool)
+	statsRepo := postgres.NewPgStatsRepository(pool)
 	config := http.Config{
 		Host: getEnv("HOST", "0.0.0.0"),
 		Port: uint16(getEnvInt("PORT", 8080)),
@@ -31,6 +35,7 @@ func main() {
 		Users:  usersRepo,
 		Teams:  teamsRepo,
 		PullRs: pullRequestsRepo,
+		Stats:  statsRepo,
 	}
 	server := http.NewServer(config, useCases)
 	go func() {

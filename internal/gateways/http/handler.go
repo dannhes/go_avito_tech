@@ -104,3 +104,15 @@ func (h *Handler) PostPullRequestReassign(ctx echo.Context) error {
 	}
 	return ctx.JSON(200, revs)
 }
+
+func (h *Handler) GetStats(ctx echo.Context) error {
+	var body gen.PostPullRequestCreateJSONRequestBody
+	if err := ctx.Bind(&body); err != nil {
+		return echo.NewHTTPError(400, err.Error())
+	}
+	stats, err := h.useCases.Stats.GetStats(ctx.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(500, err.Error())
+	}
+	return ctx.JSON(200, stats)
+}

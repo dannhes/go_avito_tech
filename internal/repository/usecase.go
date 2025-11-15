@@ -27,3 +27,7 @@ type PullRequestRepository interface {
 	ReassignReviewer(ctx context.Context, prID string, oldUserID string) (string, error)
 	Merge(ctx context.Context, prID string) (domain.PullRequest, error)
 }
+
+type StatsRepository interface {
+	GetStats(ctx context.Context) (domain.Stats, error)
+}

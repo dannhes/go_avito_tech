@@ -250,6 +250,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
 
+  /stats:
+    get:
+      summary: Get service statistics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignments:
+                    type: integer
+                  deactivations:
+                    type: integer
+
   /pullRequest/create:
     post:
       tags: [PullRequests]
