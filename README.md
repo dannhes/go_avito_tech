@@ -17,7 +17,7 @@
    go test ./tests/e2e -v
    docker-compose -f docker-compose.test.yaml down -v  
    ```
-6) Для запуска линтера (должна быть версия 1.25
+6) Для запуска линтера (должна быть версия 1.25)
    ```
    golangci-lint run
    ```
