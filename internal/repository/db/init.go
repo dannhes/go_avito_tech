@@ -19,18 +19,11 @@ func InitDB(ctx context.Context) error {
 	if dsn == "" {
 		dsn = "postgres://postgres:postgres@localhost:5432/pr_service?sslmode=disable"
 	}
-
 	var err error
 	pool, err = pgxpool.New(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("cannot create db pool: %w", err)
 	}
-
-	//err = pool.Ping(ctx)
-	//if err != nil {
-	//	return fmt.Errorf("cannot ping db: %w", err)
-	//}
-
 	schema := `
 	CREATE TABLE IF NOT EXISTS teams (
 		name TEXT PRIMARY KEY,
@@ -61,13 +54,10 @@ func InitDB(ctx context.Context) error {
 		PRIMARY KEY (pr_id, user_id)
 	);
 	`
-
 	_, err = pool.Exec(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("cannot create tables: %w", err)
 	}
-
-	fmt.Println("Database initialized successfully")
 	return nil
 }
 
