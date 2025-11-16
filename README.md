@@ -2,7 +2,7 @@
 Инструкция к использованию приложения:
 1) Склонировать репозиторий
 ```
-git clone git@github.com:dannhes/go_avito_tech.git
+   git clone git@github.com:dannhes/go_avito_tech.git
 ```
 2) Зайти в Docker
 3) Поднять приложение в докере
