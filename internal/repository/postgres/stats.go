@@ -33,6 +33,7 @@ const (
 			COUNT(*) FROM teams;`
 )
 
+//nolint:errcheck
 func (r *PgStatsRepository) GetStats(ctx context.Context) (domain.Stats, error) {
 	stats := domain.Stats{
 		ReviewsPerUser: make(map[int]int),

@@ -2,52 +2,55 @@ package e2e
 
 import (
 	"encoding/json"
-	"go_avito_tech/internal/domain"
+	"fmt"
+	"go_avito_tech/api/gen"
 	"net/http"
 	"testing"
 )
 
-func TestPrCreateAndFetch(t *testing.T) {
-	resp := doPost(t, "/pull_requests", map[string]any{
-		"id":                  "u123",
-		"name":                "Roma",
-		"author_id":           "123",
-		"status":              domain.StatusOpen,
-		"need_more_reviewers": true,
+func TestPrCreateAndMerge(t *testing.T) {
+	resp := doPost(t, "/team/add", map[string]any{
+		"team_name": "dev",
+		"members": []map[string]any{
+			{"user_id": "222", "username": "Alice", "is_active": true},
+		},
 	})
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("resp.StatusCode = %d; want %d", resp.StatusCode, http.StatusOK)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("failed to create team/author: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
-	respNew, err := http.Get(baseURL + "/pull_requests/u123")
-	if err != nil {
-		t.Fatalf("GET failed: %v", err)
+	resp = doPost(t, "/pullRequest/create", map[string]any{
+		"pull_request_id":   "522",
+		"pull_request_name": "Feature X",
+		"author_id":         "222",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("failed to create PR: %d", resp.StatusCode)
 	}
-	defer respNew.Body.Close()
-	if respNew.StatusCode != http.StatusOK {
-		t.Errorf("resp.StatusCode = %d; want %d", respNew.StatusCode, http.StatusOK)
+	defer resp.Body.Close()
+	var pr gen.PullRequest
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		t.Errorf("failed to decode PR response: %v", err)
 	}
-	var temp struct {
-		ID                string                   `json:"id"`
-		Username          string                   `json:"name"`
-		AuthorId          string                   `json:"author_id"`
-		Status            domain.PullRequestStatus `json:"status"`
-		NeedMoreReviewers bool                     `json:"need_more_reviewers"`
+	fmt.Println(pr.PullRequestId)
+	if pr.PullRequestId != "522" {
+		t.Errorf("wrong PR id: %s", pr.PullRequestId)
 	}
-	json.NewDecoder(respNew.Body).Decode(&temp)
-	if temp.ID != "u123" {
-		t.Errorf("wrong id: %s", temp.ID)
+	if pr.Status != gen.PullRequestStatusOPEN {
+		t.Errorf("wrong PR status: %s", pr.Status)
 	}
-	if temp.Username != "Roma" {
-		t.Errorf("wrong username: %s", temp.Username)
+	resp = doPost(t, "/pullRequest/merge", map[string]any{
+		"pull_request_id": "522",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("failed to merge PR: %d", resp.StatusCode)
 	}
-	if temp.AuthorId != "123" {
-		t.Errorf("wrong author id: %s", temp.AuthorId)
+	defer resp.Body.Close()
+	var mergedPr gen.PullRequest
+	if err := json.NewDecoder(resp.Body).Decode(&mergedPr); err != nil {
+		t.Errorf("failed to decode merged PR: %v", err)
 	}
-	if temp.Status != domain.StatusOpen {
-		t.Errorf("wrong status: %s", temp.Status)
-	}
-	if temp.NeedMoreReviewers != true {
-		t.Errorf("wrong need more reviewers: %v", temp.NeedMoreReviewers)
+	if mergedPr.Status != gen.PullRequestStatusMERGED {
+		t.Errorf("PR not merged, status: %s", mergedPr.Status)
 	}
 }

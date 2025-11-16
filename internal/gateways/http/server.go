@@ -50,7 +50,10 @@ func NewServer(cfg Config, useCases UseCases) *Server {
 			zap.Int("status", code),
 			zap.String("error", msg),
 		)
-		c.JSON(code, map[string]string{"error": msg})
+		err = c.JSON(code, map[string]string{"error": msg})
+		if err != nil {
+			return
+		}
 	}
 	return s
 }

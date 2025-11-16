@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go_avito_tech/internal/domain"
 	"math/rand"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PullRequestRepository struct {
@@ -23,17 +24,27 @@ var (
 
 const (
 	saveRequestQuery = `INSERT INTO pull_requests 
-    	(id, name, author_id, status, need_more_reviewers, created_at)
-    	VALUES ($1,$2,$3,$4,$5,$6)`
-	findRequestQuery          = `SELECT * FROM pull_requests WHERE id = $1`
-	findRequestReviewersQuery = `SELECT * FROM pull_request_reviewers WHERE id = $1`
-	selectCandidateQuery      = `SELECT id FROM users WHERE team_name=(SELECT team_name 
-                                 FROM users WHERE id=$1) 
-		 						 AND id <> $1 AND is_active=TRUE`
+		(id, name, author_id, status, need_more_reviewers, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6)`
+
+	findRequestQuery = `
+		SELECT id, name, author_id, status, need_more_reviewers, created_at, merged_at
+		FROM pull_requests
+		WHERE id=$1`
+
+	findRequestReviewersQuery = `SELECT user_id FROM pull_request_reviewers WHERE pr_id=$1`
+
+	selectCandidateQuery = `SELECT id FROM users WHERE team_name=(SELECT team_name 
+		FROM users WHERE id=$1) AND id <> $1 AND is_active=TRUE`
+
 	saveReviewerToPrQuery = `INSERT INTO pull_request_reviewers (pr_id, user_id)
-							 VALUES ($1,$2)`
+		VALUES ($1,$2)`
+
 	updateReviewerQuery = `UPDATE pull_request_reviewers SET user_id=$1 WHERE pr_id=$2 AND user_id=$3`
-	updatePrMerged      = `UPDATE pull_requests SET status='MERGED', merged_at = $1, where id = $2`
+
+	updatePrMerged = `UPDATE pull_requests
+		SET status='MERGED', merged_at=$1
+		WHERE id=$2`
 )
 
 func NewPullRequestRepository(pool *pgxpool.Pool) *PullRequestRepository {
@@ -41,7 +52,10 @@ func NewPullRequestRepository(pool *pgxpool.Pool) *PullRequestRepository {
 }
 
 func (r *PullRequestRepository) Save(ctx context.Context, pr domain.PullRequest) error {
-	_, err := r.pool.Exec(ctx, saveRequestQuery, pr.ID, pr.Name, pr.Status, pr.NeedMoreReviewers, time.Now())
+	now := time.Now()
+	pr.CreatedAt = &now
+	_, err := r.pool.Exec(ctx, saveRequestQuery, pr.ID, pr.Name, pr.AuthorID, pr.Status,
+		pr.NeedMoreReviewers, now)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrSaveFailed, err)
 	}
@@ -50,14 +64,18 @@ func (r *PullRequestRepository) Save(ctx context.Context, pr domain.PullRequest)
 
 func (r *PullRequestRepository) FindByID(ctx context.Context, id string) (domain.PullRequest, error) {
 	var pr domain.PullRequest
-	err := r.pool.QueryRow(ctx, findRequestQuery, id).Scan(&pr.ID, &pr.Name, &pr.AuthorID, &pr.Status,
-		&pr.NeedMoreReviewers)
+	var createdAt, mergedAt *time.Time
+	err := r.pool.QueryRow(ctx, findRequestQuery, id).Scan(
+		&pr.ID, &pr.Name, &pr.AuthorID, &pr.Status, &pr.NeedMoreReviewers, &createdAt, &mergedAt,
+	)
 	if err != nil {
 		return pr, fmt.Errorf("%w: %v", ErrPRNotFound, err)
 	}
+	pr.CreatedAt = createdAt
+	pr.MergedAt = mergedAt
 	rows, err := r.pool.Query(ctx, findRequestReviewersQuery, id)
 	if err != nil {
-		return pr, fmt.Errorf("%w: %v", ErrPRMerged, err)
+		return pr, fmt.Errorf("%w: %v", ErrReviewerNotAssigned, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -71,7 +89,12 @@ func (r *PullRequestRepository) FindByID(ctx context.Context, id string) (domain
 }
 
 func (r *PullRequestRepository) FindByReviewer(ctx context.Context, userID string) ([]domain.PullRequest, error) {
-	rows, err := r.pool.Query(ctx, `SELECT * FROM pull_requests WHERE user_id=$1`, userID)
+	rows, err := r.pool.Query(ctx, `
+		SELECT pr.id
+		FROM pull_requests pr
+		JOIN pull_request_reviewers r ON pr.id = r.pr_id
+		WHERE r.user_id = $1
+	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrReviewerNotAssigned, err)
 	}
@@ -86,8 +109,7 @@ func (r *PullRequestRepository) FindByReviewer(ctx context.Context, userID strin
 	}
 	var prs []domain.PullRequest
 	for _, val := range prsId {
-		var pr domain.PullRequest
-		pr, err = r.FindByID(ctx, val)
+		pr, err := r.FindByID(ctx, val)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrPRNotFound, err)
 		}
@@ -140,7 +162,6 @@ func (r *PullRequestRepository) ReassignReviewer(ctx context.Context, prID strin
 	if pr.Status == domain.StatusMerged {
 		return "", ErrPRMerged
 	}
-	// TODO validate
 	var teamName string
 	err = r.pool.QueryRow(ctx, `SELECT team_name FROM users WHERE id=$1`, oldUserID).Scan(&teamName)
 	if err != nil {
@@ -165,7 +186,7 @@ func (r *PullRequestRepository) ReassignReviewer(ctx context.Context, prID strin
 		return "", ErrNoCandidate
 	}
 	newReviewer := candidates[rand.Intn(len(candidates))]
-	_, err = r.pool.Exec(ctx, updateReviewerQuery, newReviewer)
+	_, err = r.pool.Exec(ctx, updateReviewerQuery, newReviewer, prID, oldUserID)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrNoCandidate, err)
 	}
@@ -175,13 +196,15 @@ func (r *PullRequestRepository) ReassignReviewer(ctx context.Context, prID strin
 func (r *PullRequestRepository) Merge(ctx context.Context, prID string) (domain.PullRequest, error) {
 	pr, err := r.FindByID(ctx, prID)
 	if err != nil {
-		return pr, ErrPRNotFound
+		return domain.PullRequest{}, ErrPRNotFound
 	}
 	if pr.Status == domain.StatusMerged {
 		return pr, nil
 	}
+	now := time.Now()
 	pr.Status = domain.StatusMerged
-	_, err = r.pool.Exec(ctx, updatePrMerged, pr.ID, time.Now())
+	pr.MergedAt = &now
+	_, err = r.pool.Exec(ctx, updatePrMerged, now, prID)
 	if err != nil {
 		return pr, fmt.Errorf("%w: %v", ErrPRMerged, err)
 	}

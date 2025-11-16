@@ -21,7 +21,7 @@ type TeamRepository struct {
 }
 
 const (
-	saveTeamQuery   = `INSERT INTO teams (name, created_at) VALUES ($1, $2)`
+	saveTeamQuery   = `INSERT INTO teams (name, created_at) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING`
 	getMembersQuery = `SELECT id, username, team_name, is_active FROM users WHERE team_name = $1`
 	getTeamQuery    = `SELECT name, created_at FROM teams WHERE name = $1`
 )
@@ -39,7 +39,9 @@ func (r *TeamRepository) Save(ctx context.Context, team string) error {
 }
 
 func (r *TeamRepository) FindByName(ctx context.Context, name string) (domain.Team, error) {
-	_, err := r.pool.Exec(ctx, getTeamQuery, name)
+	row := r.pool.QueryRow(ctx, getTeamQuery, name)
+	var createdAt time.Time
+	err := row.Scan(&name, &createdAt)
 	if err != nil {
 		return domain.Team{}, fmt.Errorf("%w: %v", ErrTeamNotFound, err)
 	}
@@ -51,9 +53,8 @@ func (r *TeamRepository) FindByName(ctx context.Context, name string) (domain.Te
 	defer rows.Close()
 	for rows.Next() {
 		user := domain.User{}
-		er := rows.Scan(&user.ID, &user.Username, &user.TeamName, &user.IsActive)
-		if er != nil {
-			return domain.Team{}, fmt.Errorf("%w: %v", ErrScanFailed, err)
+		if er := rows.Scan(&user.ID, &user.Username, &user.TeamName, &user.IsActive); er != nil {
+			return domain.Team{}, fmt.Errorf("%w: %v", ErrScanFailed, er)
 		}
 		users = append(users, user)
 	}

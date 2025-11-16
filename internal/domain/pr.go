@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type PullRequestStatus string
 
 const (
@@ -14,4 +16,6 @@ type PullRequest struct {
 	Status            PullRequestStatus
 	AssignedReviewers []string
 	NeedMoreReviewers bool
+	CreatedAt         *time.Time
+	MergedAt          *time.Time
 }
